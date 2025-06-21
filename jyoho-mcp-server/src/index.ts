@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from 'zod';
 
 // Constants for Jyoho API 
-const JYOHO_API_BASE = "";
+const JYOHO_API_BASE = "http://localhost:3000"; // This is where we run our Jyoho API. Change port as needed
 const USER_AGENT = "mcp-jyoho/1.0"; 
 
 // Create the MCP server instance
@@ -33,10 +33,14 @@ server.tool(
   },
   async ({ product }) => {
     
-    // DEMO: Simulate Reddit API call delay
+    /**
+     * Similate the API call with timeout and mockRedditData
+     */
+
+    // TEST: Simulate Reddit API call delay
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Mock response data (simulating what we'd get from Reddit API)
+    // TEST: Mock response data (simulating what we'd get from Reddit API)
     const mockRedditData = {
       product: product,
       sentiment_score: 0.7,
@@ -52,7 +56,7 @@ server.tool(
       ]
     };
 
-    // Format simple response to the MCP client (model)
+    // Format simple response to the MCP client
     const responseText = [
       `Reddit Sentiment for "${product}":`,
       ``,
