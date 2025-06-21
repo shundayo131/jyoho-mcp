@@ -18,8 +18,7 @@ const server = new McpServer({
 });
 
 
-// TODO : create a generic function to make http requests to the Jyoho API 
-
+// TODO : create a kafka consumer to listen for market sentiment updates 
 
 /**
  * get-sentiment tool
@@ -87,7 +86,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Weather MCP Server running on stdio");
+  console.error("MCP Server running on stdio");
 }
 
 main().catch((error) => {
