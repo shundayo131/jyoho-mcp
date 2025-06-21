@@ -17,8 +17,30 @@ const server = new McpServer({
   }
 });
 
+/** 
+ * Function to call jyoho-consumer API 
+ * Calls localhost:3000/products - GET and logs the response
+ */
+async function callJyohoAPI() {
+  try {    
+    const response = await fetch(`${JYOHO_API_BASE}/products`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
 
-// TODO : create a kafka consumer to listen for market sentiment updates 
+    if (!response.ok) {
+      throw new Error(`API call failed: ${response.status} - ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+  } catch (error) {
+    // Log any errors that occur during the API call
+  }
+}
+
 
 /**
  * get-sentiment tool
@@ -32,9 +54,8 @@ server.tool(
   },
   async ({ product }) => {
     
-    /**
-     * Similate the API call with timeout and mockRedditData
-     */
+    // TEST: Call the API and log response
+    const apiResult = await callJyohoAPI();
 
     // TEST: Simulate Reddit API call delay
     await new Promise(resolve => setTimeout(resolve, 800));
@@ -42,16 +63,17 @@ server.tool(
     // TEST: Mock response data (simulating what we'd get from Reddit API)
     const mockRedditData = {
       product: product,
-      sentiment_score: 0.7,
-      total_posts: 42,
-      positive_mentions: 28,
-      negative_mentions: 6,
-      neutral_mentions: 8,
+      sentiment_score: 0.9,
+      total_posts: 100,
+      positive_mentions: 50,
+      negative_mentions: 25,
+      neutral_mentions: 25,
       top_subreddits: ["r/programming", "r/aws", "r/devops"],
       sample_posts: [
         "Love using AWS Lambda for serverless functions!",
         "Lambda cold starts are still an issue...",
-        "Just deployed my first Lambda function, pretty cool"
+        "Just deployed my first Lambda function, pretty cool",
+        "I am also using Lambda for data processing tasks.",
       ]
     };
 
