@@ -6,6 +6,25 @@ import { z } from 'zod';
 const JYOHO_API_BASE = "http://localhost:3000"; // This is where we run our Jyoho API. Change port as needed
 const USER_AGENT = "mcp-jyoho/1.0"; 
 
+// Simplified type definitions
+interface RedditPost {
+  title: string;
+  snippet: string;
+  subreddit: string;
+  score: number;
+  sentiment_score: number;
+  created_days_ago: number;
+  author: string;
+}
+
+interface SentimentData {
+  product: string;
+  overall_sentiment: number;
+  total_posts: number;
+  posts: RedditPost[];
+  analyzed_at: string;
+}
+
 // Create the MCP server instance
 // This is the main server object that will handle all MCP protocol interactions
 const server = new McpServer({
@@ -18,33 +37,56 @@ const server = new McpServer({
 });
 
 /** 
- * Function to call jyoho-consumer API 
- * Calls localhost:3000/products - GET and logs the response
+ * Get Reddit sentiment data from Jyoho API
  */
-async function callJyohoAPI() {
+async function getProductSentimentFromJyoho(product: string): Promise<SentimentData | null> {
   try {    
-    const response = await fetch(`${JYOHO_API_BASE}/products`, {
-      method: 'GET',
+    const response = await fetch(`${JYOHO_API_BASE}/product-sentiment`, {
+      method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ product })
     });
 
     if (!response.ok) {
-      throw new Error(`API call failed: ${response.status} - ${response.statusText}`);
+      throw new Error(`Jyoho API call failed: ${response.status} - ${response.statusText}`);
     }
 
     const data = await response.json();
+    return data as SentimentData;
     
   } catch (error) {
-    // Log any errors that occur during the API call
+    console.error('Error calling Jyoho API:', error);
+    throw error;
   }
 }
 
+/**
+ * Helper function to get sentiment description
+ */
+function getSentimentDescription(score: number): string {
+  if (score >= 0.6) return "Positive";
+  if (score >= 0.2) return "Slightly Positive";
+  if (score >= -0.2) return "Neutral";
+  if (score >= -0.6) return "Slightly Negative";
+  return "Negative";
+}
 
 /**
- * get-sentiment tool
- * Get market sentiment for a specific product 
+ * Helper function to format time ago
+ */
+function formatTimeAgo(daysAgo: number): string {
+  if (daysAgo < 1) return 'today';
+  if (daysAgo < 2) return 'yesterday';
+  if (daysAgo < 7) return `${Math.floor(daysAgo)} days ago`;
+  if (daysAgo < 30) return `${Math.floor(daysAgo/7)} weeks ago`;
+  return `${Math.floor(daysAgo/30)} months ago`;
+}
+
+/**
+ * get-product-sentiment tool
+ * Get market sentiment for a specific product from Reddit discussions via Jyoho API
  */
 server.tool(
   "get-product-sentiment",
@@ -54,53 +96,77 @@ server.tool(
   },
   async ({ product }) => {
     
-    // TEST: Call the API and log response
-    const apiResult = await callJyohoAPI();
+    try {
+      let sentimentData: SentimentData | null = null;
+      
+      // Try Jyoho API first, fallback to sample data
+      try {
+        sentimentData = await getProductSentimentFromJyoho(product);
+      } catch (apiError) {
+        console.error('Using sample data - Jyoho API unavailable');
+        // sentimentData = generateSampleData(product);
+      }
+      
+      if (!sentimentData) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `No sentiment data available for "${product}".`,
+            },
+          ],
+        };
+      }
 
-    // TEST: Simulate Reddit API call delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // TEST: Mock response data (simulating what we'd get from Reddit API)
-    const mockRedditData = {
-      product: product,
-      sentiment_score: 0.9,
-      total_posts: 100,
-      positive_mentions: 50,
-      negative_mentions: 25,
-      neutral_mentions: 25,
-      top_subreddits: ["r/programming", "r/aws", "r/devops"],
-      sample_posts: [
-        "Love using AWS Lambda for serverless functions!",
-        "Lambda cold starts are still an issue...",
-        "Just deployed my first Lambda function, pretty cool",
-        "I am also using Lambda for data processing tasks.",
-      ]
-    };
+      // Build simplified response
+      const overallDesc = getSentimentDescription(sentimentData.overall_sentiment);
+      
+      const responseLines = [
+        `Reddit Sentiment: ${sentimentData.product}`,
+        `Overall: ${sentimentData.overall_sentiment.toFixed(2)}/1.0 (${overallDesc})`,
+        `Posts Analyzed: ${sentimentData.total_posts}`,
+        ``,
+        `Recent Reddit Posts:`,
+      ];
 
-    // Format simple response to the MCP client
-    const responseText = [
-      `Reddit Sentiment for "${product}":`,
-      ``,
-      `Score: ${mockRedditData.sentiment_score}/1.0`,
-      `Total Posts Found: ${mockRedditData.total_posts}`,
-      `Positive: ${mockRedditData.positive_mentions}`,
-      `Negative: ${mockRedditData.negative_mentions}`,
-      `Neutral: ${mockRedditData.neutral_mentions}`,
-      ``,
-      `Top Subreddits: ${mockRedditData.top_subreddits.join(", ")}`,
-      ``,
-      `Sample Comments:`,
-      ...mockRedditData.sample_posts.map((post, i) => `${i+1}. "${post}"`),
-    ].join("\n");
+      // Add posts
+      sentimentData.posts.forEach((post: RedditPost, i: number) => {
+        const postSentiment = getSentimentDescription(post.sentiment_score);
+        const timeAgo = formatTimeAgo(post.created_days_ago);
+        
+        responseLines.push(
+          ``,
+          `${i + 1}. "${post.title}"`,
+          `   ${post.subreddit} • u/${post.author} • ${timeAgo} • Score: ${post.score}`,
+          `   Sentiment: ${postSentiment} (${post.sentiment_score.toFixed(2)})`,
+          `   "${post.snippet}"`
+        );
+      });
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: responseText,
-        },
-      ],
-    };
+      responseLines.push(
+        ``,
+        `Analysis: ${new Date(sentimentData.analyzed_at).toLocaleDateString()}`
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: responseLines.join("\n"),
+          },
+        ],
+      };
+
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error analyzing sentiment for "${product}": ${error.message}`,
+          },
+        ],
+      };
+    }
   }
 );
 
