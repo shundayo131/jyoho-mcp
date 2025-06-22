@@ -90,9 +90,9 @@ function formatTimeAgo(daysAgo: number): string {
  */
 server.tool(
   "get-product-sentiment",
-  "Get sentiment analysis for a product from Reddit discussions",
+  "Analyze market sentiment, public opinion, reviews, and community discussions for any product, service, or technology from online forums like Reddit and other discussion platforms. Useful for market research, competitive analysis, product feedback, brand monitoring, and understanding public perception across online communities.",
   {
-    product: z.string().min(1).describe("Product name to analyze (e.g., 'AWS Lambda')"),
+    product: z.string().min(1).describe("product name to analyze sentiment for from online discussions. Examples: 'AWS Lambda', 'React', 'Docker'"),
   },
   async ({ product }) => {
     
