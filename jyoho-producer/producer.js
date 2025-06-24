@@ -56,7 +56,7 @@ const fetchRedditData = async (query = process.env.QUERY) => {
   try {
     let url ='';
     if (query && query.trim() !== '') {
-        url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=10`;
+        url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=50`;
     } else {
         url = 'https://www.reddit.com/r/all/top.json?limit=10'; // Fetch top posts from all subreddits
     }
