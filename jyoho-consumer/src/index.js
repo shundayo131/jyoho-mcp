@@ -1,20 +1,86 @@
 import express from 'express';
-import cors from 'cors';
+import { Kafka } from 'kafkajs';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 
 // Start the server
 const PORT = process.env.PORT || 3000;
 
-// Reddit API Configuration
+
+/**  Reddit API Configuration
 const REDDIT_API_BASE = 'https://www.reddit.com';
-const USER_AGENT = 'reddit-sentiment-analyzer/1.0';
+const USER_AGENT = 'reddit-sentiment-analyzer/1.0';*/
 
 // In-memory storage for products
+const redditPosts = [];
 const sentimentCache = new Map();
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// Cache stats endpoint for debugging
+app.get('/cache-stats', (req, res) => {
+  const stats = {
+    cache_size: sentimentCache.size,
+    cached_products: Array.from(sentimentCache.keys()),
+    cache_duration_minutes: CACHE_DURATION / (60 * 1000)
+  };
+  res.json(stats);
+});
+
+app.listen(PORT, () => {
+  console.log(`jyoho-consumer API Server running on port ${PORT}`);
+  console.log(`Health check available at http://localhost:${PORT}/health`);
+  console.log(`Cache stats available at http://localhost:${PORT}/cache-stats`);
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    cache_size: sentimentCache.size,
+    timestamp: new Date().toISOString()
+  });
+});
+
+
+// Kafka consumer setup
+const kafka = new Kafka({
+  clientId: 'jyoho-consumer',
+  brokers: [ process.env.KAFKA_BROKER ],  // singular, matches your .env
+  ssl: true,
+  sasl: {
+    mechanism: 'plain',
+    username: process.env.CLUSTER_API_KEY,
+    password: process.env.CLUSTER_API_SECRET,
+  },
+});
+
+
+const consumer = kafka.consumer({ groupId: 'jyoho-consumer-group' });
+
+async function startConsumer() {
+  await consumer.connect();
+  await consumer.subscribe({ topic: process.env.TOPIC, fromBeginning: true });
+  console.log('Consumer is ready and subscribed to topic: ', process.env.TOPIC);
+
+  await consumer.run({
+    eachMessage: async ({ topic, partition, message }) => {
+      try {
+        const post = JSON.parse(message.value.toString());
+        redditPosts.push(post);
+        // Optionally, limit memory usage:
+        if (redditPosts.length > 1000) redditPosts.shift();
+        console.log('Consumed message from Kafka:', post.title || post);
+      } catch (err) {
+        console.error('Error parsing message:', err);
+      }
+    },
+  });
+}
+
+startConsumer().catch(console.error);
 
 /**
  * Simple sentiment analysis based on keywords
@@ -70,7 +136,7 @@ function calculateDaysAgo(created_utc) {
 
 /**
  * Fetch Reddit posts for a product
- */
+ 
 async function fetchRedditPosts(productName, limit = 50) {
   const query = productName.toLowerCase().replace(/\s+/g, '');
   const url = `${REDDIT_API_BASE}/search.json?q=${encodeURIComponent(query)}&limit=${limit}&sort=top&t=all`;
@@ -101,7 +167,7 @@ async function fetchRedditPosts(productName, limit = 50) {
 /**
  * Process Reddit posts into MCP server format
  */
-function processRedditData(posts, productName) {
+function processRedditData(posts, productName) { // 
   console.log(`Processing ${posts.length} posts...`);
   
   const processedPosts = [];
@@ -165,8 +231,10 @@ async function getRedditSentiment(productName) {
       return cached.data;
     }
     
-    // Fetch fresh data from Reddit
-    const posts = await fetchRedditPosts(productName);
+    // Filter posts from in-memory storage
+    const posts = redditPosts.filter(post =>
+      post.title && post.title.toLowerCase().includes(productName.toLowerCase())
+    );
     
     if (!posts || posts.length === 0) {
       throw new Error('No posts found');
@@ -261,10 +329,17 @@ app.post('/product-sentiment', async (req, res) => {
   console.log(`Received request for product sentiment analysis: ${product}`);
   
   try {
-    // Try to get real Reddit data
-    const sentimentData = await getRedditSentiment(product);
-    res.json(sentimentData);
-    
+    // Filter consumedPosts for those matching the product
+    const posts = redditPosts.filter(post =>
+      post.title && post.title.toLowerCase().includes(product.toLowerCase())
+    );
+    if (!posts.length) {
+    return res.status(404).json({ error: 'No posts found for this product' });
+  }
+
+  // Process and analyze sentiment as before
+  const sentimentData = processRedditData(posts, product);
+  res.json(sentimentData);
   } catch (error) {
     console.error(`Error getting Reddit sentiment for ${product}:`, error.message);
     
@@ -275,27 +350,3 @@ app.post('/product-sentiment', async (req, res) => {
   }
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    cache_size: sentimentCache.size,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Cache stats endpoint for debugging
-app.get('/cache-stats', (req, res) => {
-  const stats = {
-    cache_size: sentimentCache.size,
-    cached_products: Array.from(sentimentCache.keys()),
-    cache_duration_minutes: CACHE_DURATION / (60 * 1000)
-  };
-  res.json(stats);
-});
-
-app.listen(PORT, () => {
-  console.log(`jyoho-consumer API Server running on port ${PORT}`);
-  console.log(`Health check available at http://localhost:${PORT}/health`);
-  console.log(`Cache stats available at http://localhost:${PORT}/cache-stats`);
-});
