@@ -48,7 +48,7 @@ async function getProductSentimentFromJyoho(product: string): Promise<SentimentD
       },
       body: JSON.stringify({ product })
     });
-
+    
     if (!response.ok) {
       throw new Error(`Jyoho API call failed: ${response.status} - ${response.statusText}`);
     }
