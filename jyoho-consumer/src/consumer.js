@@ -10,39 +10,11 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 
-/**  Reddit API Configuration
-const REDDIT_API_BASE = 'https://www.reddit.com';
-const USER_AGENT = 'reddit-sentiment-analyzer/1.0';*/
-
 // In-memory storage for products
 const redditPosts = [];
 const sentimentCache = new Map();
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
-// Cache stats endpoint for debugging
-app.get('/cache-stats', (req, res) => {
-  const stats = {
-    cache_size: sentimentCache.size,
-    cached_products: Array.from(sentimentCache.keys()),
-    cache_duration_minutes: CACHE_DURATION / (60 * 1000)
-  };
-  res.json(stats);
-});
-
-app.listen(PORT, () => {
-  console.log(`jyoho-consumer API Server running on port ${PORT}`);
-  console.log(`Health check available at http://localhost:${PORT}/health`);
-  console.log(`Cache stats available at http://localhost:${PORT}/cache-stats`);
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    cache_size: sentimentCache.size,
-    timestamp: new Date().toISOString()
-  });
-});
 
 
 // Kafka consumer setup
@@ -72,7 +44,7 @@ async function startConsumer() {
         redditPosts.push(post);
         // Optionally, limit memory usage:
         if (redditPosts.length > 1000) redditPosts.shift();
-        console.log('Consumed message from Kafka:', post.title || post);
+        console.log('Current in-memory reddit posts are:', redditPosts);
       } catch (err) {
         console.error('Error parsing message:', err);
       }
@@ -82,9 +54,37 @@ async function startConsumer() {
 
 startConsumer().catch(console.error);
 
-/**
- * Simple sentiment analysis based on keywords
- */
+
+// Start the server and check if it's running
+app.listen(PORT, () => {
+  console.log(`jyoho-consumer API Server running on port ${PORT}`);
+  console.log(`Health check available at http://localhost:${PORT}/health`);
+  console.log(`Cache stats available at http://localhost:${PORT}/cache-stats`);
+});
+
+// Cache stats endpoint for debugging
+app.get('/cache-stats', (req, res) => {
+  const stats = {
+    cache_size: sentimentCache.size,
+    cached_products: Array.from(sentimentCache.keys()),
+    cache_duration_minutes: CACHE_DURATION / (60 * 1000)
+  };
+  res.json(stats);
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    cache_size: sentimentCache.size,
+    timestamp: new Date().toISOString()
+  });
+});
+
+
+ 
+// // Simple sentiment analysis based on keywords
+
 function calculateSentiment(text) {
   if (!text) return 0;
   
@@ -134,35 +134,7 @@ function calculateDaysAgo(created_utc) {
   return diffSeconds / (60 * 60 * 24);
 }
 
-/**
- * Fetch Reddit posts for a product
- 
-async function fetchRedditPosts(productName, limit = 50) {
-  const query = productName.toLowerCase().replace(/\s+/g, '');
-  const url = `${REDDIT_API_BASE}/search.json?q=${encodeURIComponent(query)}&limit=${limit}&sort=top&t=all`;
-  
-  console.log(`Fetching Reddit data for: ${productName}`);
-  
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        'Accept': 'application/json'
-      }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Reddit API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.data.children.map(child => child.data);
-    
-  } catch (error) {
-    console.error('Error fetching Reddit data:', error);
-    throw error;
-  }
-}
 
 /**
  * Process Reddit posts into MCP server format
@@ -321,25 +293,27 @@ function generateSampleData(product) {
 // POST endpoint to fetch product sentiment with Reddit API
 app.post('/product-sentiment', async (req, res) => {
   const { product } = req.body;
-  
+
   if (!product) {
     return res.status(400).json({ error: 'Product name is required in request body' });
   }
 
   console.log(`Received request for product sentiment analysis: ${product}`);
+  console.log(`Current Reddit posts in memory: ${redditPosts}`);
   
-  try {
-    // Filter consumedPosts for those matching the product
-    const posts = redditPosts.filter(post =>
-      post.title && post.title.toLowerCase().includes(product.toLowerCase())
-    );
-    if (!posts.length) {
-    return res.status(404).json({ error: 'No posts found for this product' });
+  const posts = redditPosts.filter(post =>
+  post.title &&
+  post.title.toLowerCase().includes(product.toLowerCase())
+);
+
+  if (posts.length === 0) {
+  return res.status(404).json({ error: 'No posts found for this product' });
   }
 
   // Process and analyze sentiment as before
-  const sentimentData = processRedditData(posts, product);
-  res.json(sentimentData);
+  try {
+    const sentimentData = processRedditData(posts, product);
+    res.json(sentimentData);
   } catch (error) {
     console.error(`Error getting Reddit sentiment for ${product}:`, error.message);
     
@@ -348,5 +322,17 @@ app.post('/product-sentiment', async (req, res) => {
     const sampleResponse = generateSampleData(product);
     res.json(sampleResponse);
   }
+})
+
+//graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT. Shutting down gracefully...'); // Handle Ctrl+C
+  try {
+    await consumer.disconnect();
+    console.log('Kafka consumer disconnected');
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+  }
+  process.exit(0);
 });
 

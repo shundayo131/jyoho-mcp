@@ -7,8 +7,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "start": "node src/consumer.js",
+    "dev": "node --watch src/consumer.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
