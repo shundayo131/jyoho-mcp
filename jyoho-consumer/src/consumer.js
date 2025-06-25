@@ -135,7 +135,6 @@ function calculateDaysAgo(created_utc) {
 }
 
 
-
 /**
  * Process Reddit posts into MCP server format
  */
