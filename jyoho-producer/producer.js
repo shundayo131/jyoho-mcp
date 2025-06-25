@@ -8,7 +8,7 @@ dotenv.config();
 // create an express app
 const app = express();
 app.use(express.json());
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 
 
 
@@ -56,7 +56,7 @@ const fetchRedditData = async (query = process.env.QUERY) => {
   try {
     let url ='';
     if (query && query.trim() !== '') {
-        url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=50`;
+        url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=5`;
     } else {
         url = 'https://www.reddit.com/r/all/top.json?limit=10'; // Fetch top posts from all subreddits
     }
